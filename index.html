@@ -95,7 +95,7 @@ html,body{width:100%;height:100%;overflow:hidden}body{overscroll-behavior:none}.
   </div>
  </section>
  <div class="mapbox"><div id="map"></div><button id="drawerReopen" class="drawerReopen" aria-label="메뉴 열기" style="display:none">☰ 찐맛집</button><button id="savedToggle" class="mapSavedToggle" aria-pressed="false">♥ 찜한 곳</button><div class="mapZoom"><button id="zoomIn" aria-label="확대">+</button><button id="zoomOut" aria-label="축소">−</button><button id="myLocation" class="mapLocation" aria-label="내 위치" title="내 위치"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/></svg></button></div></div>
- <section class="results">
+ <section class="results" id="results">
   <div id="homePanel" class="homePanel">
    <div class="locationSummary"><div><strong>현재 위치</strong><div class="meta" id="currentArea">위치를 확인하고 있습니다</div></div><button id="areaRefresh" class="textButton">위치 수정</button></div>
    <div class="homeSection"><h2>주변 탐색</h2><div class="categoryGrid">
@@ -105,7 +105,7 @@ html,body{width:100%;height:100%;overflow:hidden}body{overscroll-behavior:none}.
    <div class="homeSection savedPreview"><h2>찜 목록</h2><p id="savedPreviewText">저장한 맛집을 이곳에서 확인할 수 있어요.</p></div>
   </div>
   <div class="directionPanel" id="directionPanel" style="display:none"><h2>길찾기</h2><input id="routeStart" type="text" placeholder="출발지를 입력하세요"><input id="routeEnd" type="text" placeholder="도착지를 입력하세요"><button id="routeButton">길찾기</button><p>길 안내는 카카오맵에서 이어서 확인할 수 있습니다.</p></div>
-  <div class="resultsHead"><strong id="resultsTitle">주변 식당</strong><span class="meta" id="resultCount">검색 전</span></div>
+  <div class="resultsHead" id="resultsHead"><strong id="resultsTitle">주변 식당</strong><span class="meta" id="resultCount">검색 전</span></div>
   <div id="restaurantDetail" class="detail" aria-live="polite"></div>
   <div id="resultsList" class="meta">위 검색창을 눌러 메뉴를 입력하고 검색해 주세요.</div>
   <button id="moreResults" class="moreResults" style="display:none">다음 검색 결과 불러오기</button>
