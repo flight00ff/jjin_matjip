@@ -146,18 +146,29 @@ body{background:#fff}.app{max-width:none;padding:8px;height:100dvh;gap:7px}.layo
  let resultMarkers=[];
  let activePagination=null, activeKeyword='', activeOptions=null, resultSeen=new Set(), resultTotal=0;
  const SAVED_KEY='jjin_matjip_saved_v1';
+ // Configure this with the deployed Cloudflare Worker URL (see FREE_RATING_SETUP.md).
+ const EVALUATOR_API_URL='';
  let savedPlaces=[];let savedMode=false;let resultItems=[];let savedMarkers=[];let selectedId=null,activePlace=null,activePlacePos=null,detailOpen=false;
- try{savedPlaces=JSON.parse(localStorage.getItem(SAVED_KEY)||'[]');if(!Array.isArray(savedPlaces))savedPlaces=[];}catch(e){savedPlaces=[];}
+ try{savedPlaces=JSON.parse(localStorage.getItem(SAVED_KEY)||'[]');if(!Array.isArray(savedPlaces))savedPlaces=[];savedPlaces.forEach(x=>x.rating=null);localStorage.setItem(SAVED_KEY,JSON.stringify(savedPlaces));}catch(e){savedPlaces=[];}
  function persistSaved(){try{localStorage.setItem(SAVED_KEY,JSON.stringify(savedPlaces));}catch(e){showStatus('기기 저장 공간에 접근할 수 없어 찜 목록을 저장하지 못했습니다.');}}
  function isSaved(id){return savedPlaces.some(x=>x.id===String(id));}
  function placeId(p){return String(p.id||((p.place_name||'')+'|'+(p.road_address_name||p.address_name||'')));}
  function placeMarkerImage(index,value,saved,selected){const code=String.fromCharCode(65+(index%26));const circle=saved?'#7442a5':'#2878c8',height=selected?23:18;const pointer=selected?'<path d="M11.8 16.2 15.5 22 19.2 16.2Z" fill="#fff"/><path d="M11.8 16.2 15.5 22 19.2 16.2" fill="none" stroke="#d7d9de" stroke-width="1"/>':'';const svg='<svg xmlns="http://www.w3.org/2000/svg" width="31" height="'+height+'" viewBox="0 0 31 '+height+'"><rect x="0.5" y="0.5" width="30" height="17" rx="4" fill="#fff" stroke="#d7d9de"/><circle cx="8.2" cy="9" r="4.5" fill="'+circle+'"/><text x="8.2" y="11.5" text-anchor="middle" font-family="Arial,sans-serif" font-size="7" font-weight="700" fill="#fff">'+code+'</text>'+(selected?'<rect x="13.4" y="2.5" width="16.8" height="12" rx="2" fill="#ffe27a"/>':'')+'<text x="14" y="11.5" text-anchor="start" font-family="Arial,sans-serif" font-size="8.8" font-weight="700" fill="#30343a">'+value+'</text>'+pointer+'</svg>';return new kakao.maps.MarkerImage('data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg),new kakao.maps.Size(31,height),{offset:new kakao.maps.Point(15.5,height)});}
- function estimateRating(p,d,rank){const term=activeKeyword.trim().toLocaleLowerCase();const text=((p.place_name||'')+' '+(p.category_name||'')).toLocaleLowerCase();const match=term&&text.includes(term)?0.35:-0.05;const distanceScore=.22*(1-Math.min(1,d/Math.max(radius,.1)));const rankScore=.28*(1-Math.min(1,rank/15));const raw=4.0+match+distanceScore+rankScore;return Math.max(3.5,Math.min(4.9,raw));}
- function refreshMarkers(){resultMarkers.forEach(m=>m.setMap(null));resultMarkers=[];savedMarkers.forEach(m=>m.setMap(null));savedMarkers=[];
-  if(savedMode){savedPlaces.forEach((item,index)=>{if(!Number.isFinite(item.x)||!Number.isFinite(item.y))return;const pos=new kakao.maps.LatLng(item.y,item.x);const rating=Number.isFinite(Number(item.rating))?Number(item.rating):estimateRating(item,distanceKm(center,pos),index);const marker=new kakao.maps.Marker({position:pos,map:map,image:placeMarkerImage(index,rating.toFixed(1),true,placeId(item)===selectedId)});savedMarkers.push(marker);kakao.maps.event.addListener(marker,'click',()=>selectRestaurant(item,pos));});}
-  else{resultItems.forEach(({p,rating},index)=>{const pos=new kakao.maps.LatLng(p.y,p.x);const saved=isSaved(placeId(p)),selected=placeId(p)===selectedId;const marker=new kakao.maps.Marker({position:pos,map:map,image:placeMarkerImage(index,rating.toFixed(1),saved,selected)});resultMarkers.push(marker);kakao.maps.event.addListener(marker,'click',()=>selectRestaurant(p,pos));});}
+ function ratingText(rating){return rating!==null&&rating!==undefined&&rating!==''&&Number.isFinite(Number(rating))?Number(rating).toFixed(1):'--';}
+ function evaluateRestaurants(placesToRate){
+  if(!placesToRate.length)return;
+  if(!EVALUATOR_API_URL){const ids=new Set(placesToRate.map(placeId));resultItems.forEach(item=>{if(ids.has(placeId(item.p)))item.evaluation={status:'서버 설정 필요'};});renderResultRows();return;}
+  fetch(EVALUATOR_API_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({menu:activeKeyword,places:placesToRate.map(p=>({id:placeId(p),name:p.place_name,address:p.road_address_name||p.address_name||'',category:p.category_name||''}))})})
+   .then(r=>{if(!r.ok)throw new Error('평가 요청 실패');return r.json();})
+   .then(data=>{const byId=new Map((data.results||[]).map(x=>[String(x.id),x]));resultItems.forEach(item=>{const scored=byId.get(placeId(item.p));if(scored){item.rating=scored.score!==null&&scored.score!==undefined&&Number.isFinite(Number(scored.score))?Number(scored.score):null;item.evaluation=scored;}});renderResultRows();refreshMarkers();})
+   .catch(()=>{resultItems.forEach(item=>{if(placesToRate.some(p=>placeId(p)===placeId(item.p)))item.evaluation={status:'평가 실패'};});renderResultRows();});
  }
- function savePlace(p){const id=placeId(p);if(isSaved(id))savedPlaces=savedPlaces.filter(x=>x.id!==id);else{const found=resultItems.find(x=>placeId(x.p)===id);const pos=new kakao.maps.LatLng(p.y,p.x);const rating=found?found.rating:estimateRating(p,distanceKm(center,pos),0);savedPlaces.unshift({id,place_name:p.place_name||'',category_name:p.category_name||'',road_address_name:p.road_address_name||'',address_name:p.address_name||'',phone:p.phone||'',place_url:p.place_url||'',x:Number(p.x),y:Number(p.y),rating:rating,savedAt:Date.now()});}persistSaved();refreshMarkers();if(!detailOpen)renderActiveList();else $('resultCount').textContent=savedMode?savedPlaces.length+'개':resultTotal+'곳 · '+radius+'km 이내';}
+ function renderResultRows(){const host=$('resultsList');host.innerHTML='';resultItems.forEach(({p,d,rating},index)=>appendResultRow(p,d,index,rating));}
+ function refreshMarkers(){resultMarkers.forEach(m=>m.setMap(null));resultMarkers=[];savedMarkers.forEach(m=>m.setMap(null));savedMarkers=[];
+  if(savedMode){savedPlaces.forEach((item,index)=>{if(!Number.isFinite(item.x)||!Number.isFinite(item.y))return;const pos=new kakao.maps.LatLng(item.y,item.x);const marker=new kakao.maps.Marker({position:pos,map:map,image:placeMarkerImage(index,ratingText(item.rating),true,placeId(item)===selectedId)});savedMarkers.push(marker);kakao.maps.event.addListener(marker,'click',()=>selectRestaurant(item,pos));});}
+  else{resultItems.forEach(({p,rating},index)=>{const pos=new kakao.maps.LatLng(p.y,p.x);const saved=isSaved(placeId(p)),selected=placeId(p)===selectedId;const marker=new kakao.maps.Marker({position:pos,map:map,image:placeMarkerImage(index,ratingText(rating),saved,selected)});resultMarkers.push(marker);kakao.maps.event.addListener(marker,'click',()=>selectRestaurant(p,pos));});}
+ }
+ function savePlace(p){const id=placeId(p);if(isSaved(id))savedPlaces=savedPlaces.filter(x=>x.id!==id);else{const found=resultItems.find(x=>placeId(x.p)===id);const pos=new kakao.maps.LatLng(p.y,p.x);savedPlaces.unshift({id,place_name:p.place_name||'',category_name:p.category_name||'',road_address_name:p.road_address_name||'',address_name:p.address_name||'',phone:p.phone||'',place_url:p.place_url||'',x:Number(p.x),y:Number(p.y),rating:found?found.rating:null,savedAt:Date.now()});}persistSaved();refreshMarkers();if(!detailOpen)renderActiveList();else $('resultCount').textContent=savedMode?savedPlaces.length+'개':resultTotal+'곳 · '+radius+'km 이내';}
  function renderActiveList(){const host=$('resultsList');host.innerHTML='';$('resultsTitle').textContent=savedMode?'찜한 식당':'주변 식당';
   if(savedMode){$('resultCount').textContent=savedPlaces.length+'개';$('moreResults').style.display='none';if(!savedPlaces.length){host.textContent='찜한 식당이 없습니다.';return;}
    savedPlaces.forEach(item=>{const row=document.createElement('div');row.className='result';const left=document.createElement('div'),right=document.createElement('div');const name=document.createElement('strong');name.textContent='찜 · '+item.place_name;const meta=document.createElement('div');meta.className='meta';meta.textContent=(item.category_name||'음식점')+' · '+(item.road_address_name||item.address_name||'주소 정보 없음');left.append(name,meta);const open=document.createElement('button');open.className='secondary';open.textContent='상세';open.onclick=()=>showRestaurantDetail(item,new kakao.maps.LatLng(item.y,item.x));const remove=document.createElement('button');remove.className='secondary';remove.textContent='찜 해제';remove.onclick=()=>{savedPlaces=savedPlaces.filter(x=>x.id!==item.id);persistSaved();refreshMarkers();renderActiveList();};right.append(open,remove);row.append(left,right);host.append(row);});
@@ -181,6 +192,8 @@ body{background:#fff}.app{max-width:none;padding:8px;height:100dvh;gap:7px}.layo
   const saveBtn=document.createElement('button');saveBtn.className='savePlaceBtn';const savedId=placeId(p);saveBtn.textContent=isSaved(savedId)?'찜 해제':'찜하기';saveBtn.onclick=()=>{savePlace(p);saveBtn.textContent=isSaved(savedId)?'찜 해제':'찜하기';};box.append(saveBtn);
   const addLine=(label,value)=>{if(!value)return;const line=document.createElement('p');line.textContent=label+': '+value;box.append(line);};
   addLine('업종',p.category_name);addLine('도로명 주소',p.road_address_name);addLine('지번 주소',p.address_name);addLine('전화번호',p.phone);
+  const assessed=resultItems.find(item=>placeId(item.p)===placeId(p))?.evaluation;
+  if(assessed?.reason)addLine('찐맛집 평가 근거',assessed.reason);
 
   const searchMenu=$('menuQuery').value.trim();
   const baseQuery=[p.place_name,p.road_address_name||p.address_name].filter(Boolean).join(' ');
@@ -196,6 +209,7 @@ body{background:#fff}.app{max-width:none;padding:8px;height:100dvh;gap:7px}.layo
   addLink(google(p.place_name+' 재방문 또 방문 단골'),'재방문·단골 검색');
   addLink(google(p.place_name+' 광고 협찬 체험단'),'광고·협찬 관련 검색');
   addLink(kakaoSearch,'카카오맵 검색');
+  (assessed?.sources||[]).forEach((source,index)=>{if(source.url)addLink(source.url,'평가 근거 '+(index+1));});
   if(p.place_url)addLink(p.place_url,'카카오 장소 상세');
   box.append(links);
 
@@ -208,7 +222,7 @@ body{background:#fff}.app{max-width:none;padding:8px;height:100dvh;gap:7px}.layo
   const left=document.createElement('div'),right=document.createElement('div'),main=document.createElement('div'),text=document.createElement('div');main.className='resultMain';text.className='resultText';
   const code=document.createElement('span');code.className='resultCode';code.textContent=String.fromCharCode(65+(index%26));
   const name=document.createElement('strong');name.textContent=(isSaved(placeId(p))?'찜 · ':'')+p.place_name;
-  const ratingLabel=document.createElement('span');ratingLabel.className='estimatedRating';ratingLabel.title='검색 적합도와 거리로 계산한 찐맛집 추정 점수입니다. 실제 이용자 평점이 아닙니다.';ratingLabel.textContent=rating.toFixed(1);
+  const ratingLabel=document.createElement('span');ratingLabel.className='estimatedRating';const evaluation=resultItems.find(x=>placeId(x.p)===placeId(p))?.evaluation;ratingLabel.title=evaluation?.reason||'웹 검색 자료를 기준으로 평가합니다.';ratingLabel.textContent=ratingText(rating);if(evaluation?.status)ratingLabel.textContent=evaluation.status;else if(!EVALUATOR_API_URL)ratingLabel.title='평가 서버 설정이 필요합니다. 무료 설정 안내를 확인해 주세요.';
   const meta=document.createElement('div');meta.className='meta';meta.textContent=(p.category_name||'음식점')+' · '+(p.road_address_name||p.address_name||'주소 정보 없음');
   text.append(name,ratingLabel,meta);if(p.phone){const phone=document.createElement('div');phone.className='meta';phone.textContent='전화: '+p.phone;text.append(phone);}main.append(code,text);left.append(main);
   const d=document.createElement('div');d.className='distance';d.textContent=dist.toFixed(1)+'km';right.append(d);
@@ -217,7 +231,7 @@ body{background:#fff}.app{max-width:none;padding:8px;height:100dvh;gap:7px}.layo
  function addResult(p,dist,rating){const index=resultItems.length;resultItems.push({p,d:dist,rating:rating});appendResultRow(p,dist,index,rating);}
  function appendSearchPage(data,pagination){
   const found=(data||[]).map((p,rank)=>({p,d:distanceKm(center,new kakao.maps.LatLng(p.y,p.x)),rank:rank})).filter(x=>x.d<=radius).filter(x=>{const k=x.p.id||((x.p.place_name||'')+'|'+(x.p.road_address_name||x.p.address_name||''));if(resultSeen.has(k))return false;resultSeen.add(k);return true;}).sort((a,b)=>a.d-b.d);
-  found.forEach(x=>{addResult(x.p,x.d,estimateRating(x.p,x.d,x.rank));resultTotal++;});
+  found.forEach(x=>{addResult(x.p,x.d,null);resultTotal++;});
   if(resultItems.length&&!selectedId){const first=resultItems[0],firstPos=new kakao.maps.LatLng(first.p.y,first.p.x);selectedId=placeId(first.p);map.setCenter(firstPos);map.setLevel(3);document.querySelectorAll('.result').forEach(row=>row.classList.toggle('selected',row.dataset.placeId===selectedId));}
   refreshMarkers();
   if(savedMode)renderActiveList();
@@ -227,6 +241,7 @@ body{background:#fff}.app{max-width:none;padding:8px;height:100dvh;gap:7px}.layo
   if(activePagination&&activePagination.hasNextPage){more.style.display='block';more.disabled=false;more.textContent='다음 검색 결과 불러오기';}
   else {more.style.display='none';}
   if(resultTotal===0){$('resultsList').textContent='검색 반경 내 결과가 없습니다. 반경을 넓히거나 검색어를 바꿔보세요.';}
+  evaluateRestaurants(found.map(x=>x.p));
  }
  function runKeywordSearch(page){
   $('resultCount').textContent=page===1?'검색 중…':'추가 검색 중…';
