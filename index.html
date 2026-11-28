@@ -144,7 +144,7 @@ body{background:#fff}.app{max-width:none;padding:8px;height:100dvh;gap:7px}.layo
   return 6371*2*Math.atan2(Math.sqrt(h),Math.sqrt(1-h));
  }
  let resultMarkers=[];
- let activePagination=null, activeKeyword='', activeOptions=null, resultSeen=new Set(), resultTotal=0;
+ let activePagination=null, activeKeyword='', activeOptions=null, resultSeen=new Set(), resultTotal=0,searchSessionId=0;
  const SAVED_KEY='jjin_matjip_saved_v1';
  // Configure this with the deployed Cloudflare Worker URL (see FREE_RATING_SETUP.md).
  const EVALUATOR_API_URL='';
@@ -157,11 +157,13 @@ body{background:#fff}.app{max-width:none;padding:8px;height:100dvh;gap:7px}.layo
  function ratingText(rating){return rating!==null&&rating!==undefined&&rating!==''&&Number.isFinite(Number(rating))?Number(rating).toFixed(1):'--';}
  function evaluateRestaurants(placesToRate){
   if(!placesToRate.length)return;
-  if(!EVALUATOR_API_URL){const ids=new Set(placesToRate.map(placeId));resultItems.forEach(item=>{if(ids.has(placeId(item.p)))item.evaluation={status:'서버 설정 필요'};});renderResultRows();return;}
+  const session=searchSessionId,keyword=activeKeyword,ids=new Set(placesToRate.map(placeId));
+  resultItems.forEach(item=>{if(ids.has(placeId(item.p)))item.evaluation={status:'평가 중'};});renderResultRows();
+  if(!EVALUATOR_API_URL){resultItems.forEach(item=>{if(ids.has(placeId(item.p)))item.evaluation={status:'서버 설정 필요'};});renderResultRows();return;}
   fetch(EVALUATOR_API_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({menu:activeKeyword,places:placesToRate.map(p=>({id:placeId(p),name:p.place_name,address:p.road_address_name||p.address_name||'',category:p.category_name||''}))})})
    .then(r=>{if(!r.ok)throw new Error('평가 요청 실패');return r.json();})
-   .then(data=>{const byId=new Map((data.results||[]).map(x=>[String(x.id),x]));resultItems.forEach(item=>{const scored=byId.get(placeId(item.p));if(scored){item.rating=scored.score!==null&&scored.score!==undefined&&Number.isFinite(Number(scored.score))?Number(scored.score):null;item.evaluation=scored;}});renderResultRows();refreshMarkers();})
-   .catch(()=>{resultItems.forEach(item=>{if(placesToRate.some(p=>placeId(p)===placeId(item.p)))item.evaluation={status:'평가 실패'};});renderResultRows();});
+   .then(data=>{if(session!==searchSessionId||keyword!==activeKeyword)return;const byId=new Map((data.results||[]).map(x=>[String(x.id),x]));resultItems.forEach(item=>{const scored=byId.get(placeId(item.p));if(scored){item.rating=scored.score!==null&&scored.score!==undefined&&Number.isFinite(Number(scored.score))?Number(scored.score):null;item.evaluation=scored;}});renderResultRows();refreshMarkers();})
+   .catch(()=>{if(session!==searchSessionId||keyword!==activeKeyword)return;resultItems.forEach(item=>{if(ids.has(placeId(item.p)))item.evaluation={status:'평가 실패'};});renderResultRows();});
  }
  function renderResultRows(){const host=$('resultsList');host.innerHTML='';resultItems.forEach(({p,d,rating},index)=>appendResultRow(p,d,index,rating));}
  function refreshMarkers(){resultMarkers.forEach(m=>m.setMap(null));resultMarkers=[];savedMarkers.forEach(m=>m.setMap(null));savedMarkers=[];
@@ -216,7 +218,7 @@ body{background:#fff}.app{max-width:none;padding:8px;height:100dvh;gap:7px}.layo
  }
  function selectRestaurant(p,pos){const wasDetail=detailOpen;detailOpen=false;selectedId=placeId(p);activePlace=p;activePlacePos=pos;if(wasDetail){$('restaurantDetail').style.display='none';$('restaurantDetail').innerHTML='';$('resultsList').style.display='block';renderActiveList();}map.setCenter(pos);map.setLevel(3);refreshMarkers();document.querySelectorAll('.result').forEach(row=>row.classList.toggle('selected',row.dataset.placeId===selectedId));const row=Array.from(document.querySelectorAll('.result')).find(x=>x.dataset.placeId===selectedId);if(row)row.scrollIntoView({block:'nearest'});}
  function closeRestaurantDetail(){detailOpen=false;$('restaurantDetail').style.display='none';$('restaurantDetail').innerHTML='';$('resultsList').style.display='block';renderActiveList();refreshMarkers();}
- function clearResults(){detailOpen=false;activePlace=null;activePlacePos=null;selectedId=null;resultMarkers.forEach(m=>m.setMap(null));resultMarkers=[];savedMarkers.forEach(m=>m.setMap(null));savedMarkers=[];resultItems=[];resultSeen.clear();resultTotal=0;activePagination=null;$('resultsList').innerHTML='';$('resultsList').style.display='block';$('restaurantDetail').style.display='none';$('restaurantDetail').innerHTML='';$('moreResults').style.display='none';if(savedMode){savedMode=false;updateSavedToggle();}}
+ function clearResults(){searchSessionId++;detailOpen=false;activePlace=null;activePlacePos=null;selectedId=null;resultMarkers.forEach(m=>m.setMap(null));resultMarkers=[];savedMarkers.forEach(m=>m.setMap(null));savedMarkers=[];resultItems=[];resultSeen.clear();resultTotal=0;activePagination=null;$('resultsList').innerHTML='';$('resultsList').style.display='block';$('restaurantDetail').style.display='none';$('restaurantDetail').innerHTML='';$('moreResults').style.display='none';if(savedMode){savedMode=false;updateSavedToggle();}}
  function appendResultRow(p,dist,index,rating){
   const item=document.createElement('div');item.className='result'+(selectedId===placeId(p)?' selected':'');item.dataset.placeId=placeId(p);
   const left=document.createElement('div'),right=document.createElement('div'),main=document.createElement('div'),text=document.createElement('div');main.className='resultMain';text.className='resultText';

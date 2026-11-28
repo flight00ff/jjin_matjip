@@ -4,7 +4,7 @@
 
 ## 무료 서비스 한도
 
-- Tavily 무료 계정: 월 1,000 검색 크레딧, 카드 등록 없이 시작 가능
+- Tavily 무료 계정: 월 1,000 검색 크레딧, 카드 등록 없이 시작 가능. 기본 검색은 1회당 1크레딧이므로 식당 15곳을 한 번에 평가하면 약 15크레딧(한 달 약 66회 검색분)
 - Gemini API 무료 등급: 텍스트 모델 이용량 한도 내 무료. 실제 일일 한도는 계정별 AI Studio 화면에 표시됩니다.
 - Cloudflare Workers 무료 등급: 하루 100,000 요청 한도
 
@@ -15,19 +15,16 @@
 1. Tavily에서 무료 계정을 만들고 API 키를 발급합니다: https://www.tavily.com/
 2. Google AI Studio에서 Gemini API 키를 발급합니다: https://aistudio.google.com/app/apikey
 3. PC에 Node.js가 설치되어 있으면 PowerShell에서 프로젝트의 `worker` 폴더로 이동해 다음 순서로 진행합니다.
+   - `cd C:\Users\cert\Downloads\jjin_matjip\worker`
    - `npx wrangler login` (브라우저에서 Cloudflare 로그인)
+   - `npx wrangler deploy` (먼저 Worker를 생성하고 URL 확인)
    - `npx wrangler secret put TAVILY_API_KEY`
    - 화면에 입력란이 나오면 Tavily 키를 붙여넣고 Enter
    - `npx wrangler secret put GEMINI_API_KEY`
    - 화면에 입력란이 나오면 Gemini 키를 붙여넣고 Enter
-   - `npx wrangler deploy`
-   첫 배포 시 Cloudflare 무료 계정이 필요합니다. 키는 입력할 때 화면에 표시되지 않으며 저장소에는 기록되지 않습니다.
-4. Worker의 **Settings → Variables and Secrets**에서 다음 비밀 변수를 설정합니다. 값은 GitHub에 올리지 않습니다.
-   - `TAVILY_API_KEY`
-   - `GEMINI_API_KEY`
-5. 배포가 끝나면 Worker URL을 복사합니다.
-6. `index.html`에서 `EVALUATOR_API_URL` 값을 Worker URL로 바꿔 GitHub에 올립니다.
+   Cloudflare 무료 계정이 필요합니다. 키는 입력할 때 화면에 표시되지 않으며 저장소에 기록되지 않습니다. 명령줄 대신 Cloudflare 대시보드의 **Settings → Variables and Secrets**에서 같은 비밀 변수를 등록해도 됩니다.
+4. `index.html`에서 `EVALUATOR_API_URL` 값을 Worker URL로 바꿔 GitHub에 올립니다.
 
 ## 동작 및 점수 제한
 
-초기 검색에서는 식당 최대 8곳을 평가합니다. 식당마다 Tavily 검색 1회와 Gemini 평가 1회를 사용합니다. 결과 점수는 공식 평점이 아니라 검색된 공개 자료에 대한 모델의 근거 기반 판단입니다. 검색 발췌가 충분하지 않거나 해당 메뉴의 실제 후기를 확인하지 못하면 `--`가 나올 수 있습니다. 점수 이유는 결과의 점수에 마우스를 올리거나 식당을 눌러 상세 정보의 평가 근거 링크를 확인할 수 있습니다.
+초기 검색에서는 Kakao 결과 한 페이지(최대 15곳)를 평가합니다. 식당마다 Tavily 기본 검색 1회(1크레딧)를 하고, Gemini가 최대 5곳씩 묶어 평가합니다. Worker는 한 번에 외부 검색을 4개만 병렬 처리해 무료 플랜의 연결 제한을 넘지 않게 합니다. Worker에는 IP별 분당 10회 제한도 설정했지만 Cloudflare 한도 규칙은 근사치이며 엄격한 보안 장벽은 아닙니다. 결과 점수는 공식 평점이 아니라 검색된 공개 자료에 대한 모델의 근거 기반 판단입니다. 웹 검색 요약은 최대 6개이고 원문 전체를 검증하지 않으므로, 이 점수는 ChatGPT가 웹을 깊게 조사한 수동 평가와 완전히 같거나 확정적인 평판 점수는 아닙니다. 검색 요약만으로 후기 작성자의 독립성이나 광고 여부를 완전히 확인할 수 없고, 메뉴별 충분한 후기 근거가 없으면 `--`가 나옵니다. 점수 이유는 결과의 점수에 마우스를 올리거나 식당을 눌러 상세 정보의 평가 근거 링크를 확인할 수 있습니다.
